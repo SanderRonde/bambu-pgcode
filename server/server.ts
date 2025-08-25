@@ -50,6 +50,7 @@ class BambuFTP {
     }
 
     public async getFile(fileName: string) {
+        console.log("getFile", fileName);
         return this._mutex.runExclusive(async () => {
             await fs.mkdir(GCODES_DIR, { recursive: true });
             const localFilePath = join(GCODES_DIR, fileName);
@@ -78,6 +79,7 @@ class BambuFTP {
             if (!remoteFile) {
                 return null;
             }
+            console.log("downloading", remoteFile[1]);
             await this._ftp.downloadTo(
                 join(GCODES_DIR, fileName),
                 remoteFile[1]
@@ -94,6 +96,7 @@ class BambuMQTT {
     private _client!: mqtt.MqttClient;
 
     public fileName: string | null = null;
+    public layerCount: number | null = null;
 
     public constructor(
         private readonly _printerIp: string,
@@ -210,10 +213,16 @@ class BambuMQTT {
     private _onMessage(message: {
         print?: {
             gcode_file?: string;
+            layer_num?: number;
         };
     }) {
         if (message.print?.gcode_file) {
+            console.log("gcode_file", message.print.gcode_file);
             this.fileName = message.print.gcode_file;
+        }
+        if (message.print?.layer_num) {
+            console.log("layer_num", message.print.layer_num);
+            this.layerCount = Number(message.print.layer_num);
         }
     }
 }
@@ -254,6 +263,11 @@ async function main() {
                     JSON.stringify({ fileName: bambu.fileName })
                 );
             },
+            "/api/layer_count": () => {
+                return new Response(
+                    JSON.stringify({ layerCount: bambu.layerCount })
+                );
+            },
             "/api/gcode": async () => {
                 const fileName = bambu.fileName;
                 if (!fileName) {
@@ -264,7 +278,7 @@ async function main() {
                 if (!file) {
                     return new Response("File not downloaded", { status: 404 });
                 }
-                return new Response(file.stream());
+                return new Response(file);
             },
         },
     });

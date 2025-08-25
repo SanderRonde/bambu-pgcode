@@ -216,6 +216,9 @@ $(function () {
     }
     window.uploadGcode = uploadGcode;
 
+    // Store current API layer number (current layer printer is on)
+    var currentApiLayer = null;
+
     // API polling functions for fetching gcode from server endpoints
     async function checkApiGcode() {
         if (!apiPollingEnabled) return;
@@ -293,15 +296,98 @@ $(function () {
         }
     }
 
+    // API polling function for fetching current layer number
+    async function checkApiLayerCount() {
+        if (!apiPollingEnabled) return;
+
+        try {
+            const layerResponse = await fetch("/api/layer_count");
+            if (!layerResponse.ok) {
+                console.log("No current layer available from API");
+                return;
+            }
+
+            const layerData = await layerResponse.json();
+            const apiCurrentLayer = layerData?.layerCount;
+            
+            if (apiCurrentLayer !== null && apiCurrentLayer !== currentApiLayer) {
+                currentApiLayer = apiCurrentLayer;
+                console.log(`API current layer updated: ${apiCurrentLayer}`);
+                
+                // Update the layer display and slider position with current API layer
+                updateLayerDisplay();
+                updateLayerSliderPosition();
+            }
+        } catch (error) {
+            console.error("Error checking API current layer:", error);
+        }
+    }
+
+    // Update layer display showing current layer vs total layers
+    function updateLayerDisplay() {
+        let totalLayers = null;
+        let currentLayer = currentCalculatedLayer;
+        
+        // Use API current layer if available, otherwise use local calculated layer
+        if (currentApiLayer !== null) {
+            currentLayer = currentApiLayer;
+        }
+        
+        // Get total layers from local gcode proxy
+        if (gcodeProxy) {
+            totalLayers = gcodeProxy.getLayerCount();
+        }
+        
+        if (totalLayers !== null) {
+            $("#status-layer").html(`${currentLayer}/${totalLayers}`);
+        } else {
+            $("#status-layer").html("-/-");
+        }
+    }
+
+    // Update layer slider max value based on total layers from gcode
+    function updateLayerSliderMax() {
+        let maxLayers = null;
+        
+        // Get max layers from local gcode proxy
+        if (gcodeProxy) {
+            maxLayers = gcodeProxy.getLayers().length;
+        }
+        
+        if (maxLayers !== null && $("#layer-slider").attr("max") != maxLayers) {
+            $("#layer-slider").attr("max", maxLayers);
+        }
+    }
+
+    // Update layer slider position based on current layer
+    function updateLayerSliderPosition() {
+        let currentLayer = currentCalculatedLayer;
+        
+        // Use API current layer if available
+        if (currentApiLayer !== null) {
+            currentLayer = currentApiLayer;
+        }
+        
+        // Only update position if we're not currently using the slider manually
+        if (!forceNoSync && currentLayer !== null) {
+            $("#layer-slider").attr("value", currentLayer);
+            currentLayerNumber = currentLayer;
+        }
+    }
+
     // Start API polling every 10 seconds
     function startApiPolling() {
-        console.log("Starting API polling for gcode updates every 10 seconds");
+        console.log("Starting API polling for gcode and layer updates every 10 seconds");
 
         // Check immediately on start
         checkApiGcode();
+        checkApiLayerCount();
 
         // Then check every 10 seconds
-        setInterval(checkApiGcode, 10000);
+        setInterval(() => {
+            checkApiGcode();
+            checkApiLayerCount();
+        }, 10000);
     }
 
     function initGui() {
@@ -475,12 +561,9 @@ $(function () {
                     );
 
                 //todo. find another place for this?
-                if (gcodeProxy)
-                    $("#status-layer").html(
-                        currentCalculatedLayer.toString() +
-                            "/" +
-                            gcodeProxy.getLayerCount()
-                    );
+                if (gcodeProxy) {
+                    updateLayerDisplay();
+                }
 
                 if (
                     curGcodePath != newState.gcodePath &&
@@ -890,14 +973,22 @@ $(function () {
                 if (gcodeProxy) {
                     currentCalculatedLayer =
                         gcodeProxy.syncGcodeObjToFilePos(curSimFilePos);
+                    
+                    // If we have API layer data, use that for the current layer instead
+                    let displayLayer = currentCalculatedLayer;
+                    if (currentApiLayer !== null) {
+                        displayLayer = currentApiLayer;
+                        currentCalculatedLayer = currentApiLayer;
+                    }
+                    
                     if (highlightMaterial !== undefined) {
                         gcodeProxy.highlightLayer(
-                            currentCalculatedLayer,
+                            displayLayer,
                             highlightMaterial
                         );
                     }
 
-                    $("#layer-slider")[0].value = currentCalculatedLayer;
+                    $("#layer-slider")[0].value = displayLayer;
 
                     //$("#myslider-vertical").slider('setValue', calculatedLayer, false,true);
                     //$("#myslider .slider-handle").text(calculatedLayer);
@@ -912,21 +1003,10 @@ $(function () {
 
                 if (gcodeProxy) {
                     //todo. this should be somewhere else
-
-                    if (
-                        $("#layer-slider").attr("max") !=
-                        gcodeProxy.getLayers().length
-                    ) {
-                        $("#layer-slider").attr(
-                            "max",
-                            gcodeProxy.getLayers().length
-                        );
-                        $("#layer-slider").attr(
-                            "value",
-                            gcodeProxy.getLayers().length
-                        );
-                        currentLayerNumber = gcodeProxy.getLayers().length;
-                    }
+                    
+                    // Update the layer slider max and position
+                    updateLayerSliderMax();
+                    updateLayerSliderPosition();
 
                     if (gcodeProxy.syncGcodeObjToLayer(currentLayerNumber)) {
                         if (highlightMaterial !== undefined) {
