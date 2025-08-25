@@ -209,6 +209,21 @@ class BambuMQTT {
                 );
             }
         });
+
+        if (process.argv.includes("--test")) {
+            setTimeout(() => {
+                let layerNum = 15;
+                setInterval(() => {
+                    this._onMessage({
+                        print: {
+                            gcode_file: "3DBenchy by Creative Tools_PLA.gcode",
+                            layer_num: layerNum,
+                        },
+                    });
+                    layerNum += 1;
+                }, 2000);
+            }, 10000);
+        }
     }
 
     private _onMessage(message: {
