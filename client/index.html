@@ -1,6 +1,25 @@
-<body>
-   
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PrettyGCode - 3D Print Visualization</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="shortcut icon" href="favicon.ico">
+    
     <style>
+        html, body {
+          padding: 0;
+          margin: 0;
+          height: 100%;
+          width: 100%;
+          overflow: hidden;
+        }
+
         .pgsettingstoggle {
             top: 20px;
             right: 35px;
@@ -122,6 +141,8 @@
 
         /* h1 { font-family: "Architects Daughter"; font-size: 24px; font-style: normal; font-variant: normal; font-weight: 700; line-height: 26.4px; } h3 { font-family: "Architects Daughter"; font-size: 14px; font-style: normal; font-variant: normal; font-weight: 700; line-height: 15.4px; } p { font-family: "Architects Daughter"; font-size: 14px; font-style: normal; font-variant: normal; font-weight: 400; line-height: 20px; } blockquote { font-family: "Architects Daughter"; font-size: 21px; font-style: normal; font-variant: normal; font-weight: 400; line-height: 30px; } pre { font-family: "Architects Daughter"; font-size: 13px; font-style: normal; font-variant: normal; font-weight: 400; line-height: 18.5714px; } */
     </style>
+</head>
+<body>
 
     <canvas id="pgccanvas" ></canvas>
     <div style="
@@ -384,3 +405,4 @@
     <script src="js/pgcodeparser.js"></script>
     <script src="js/prettygcodeview.js"></script>
 </body>
+</html>
