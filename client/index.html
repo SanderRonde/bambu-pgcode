@@ -26,26 +26,6 @@
             position: absolute;
             z-index:10;
         }
-        .pgconnection {
-            background: url("img/disconnected-icon.png") no-repeat scroll 0 0 transparent;
-            background-size: contain;
-            color: #a72323;
-            cursor: pointer;
-            font-weight: bold;
-            height: 38px;
-            width: 35px;
-            top: 20px;
-            right: 70px;
-            position: absolute;
-            z-index:10;
-            border:2px solid red;
-        }
-        .pgconnection.connected{
-            background: url("img/connected-icon.png") no-repeat scroll 0 0 transparent;
-            background-size: contain;
-            color: #a72323;
-            border:2px solid rgb(1, 131, 29);
-        }
 
         .pghidden {
             display:none;
@@ -163,7 +143,6 @@
     <div style="position: absolute;left:1%;bottom:20px;">
     </div>
     <button class="pgsettingstoggle" title="Toggle settings window">&#9881</button>
-    <button class="pgconnection" title="Show connection info"></button>
     <div id='mygui' class='xgwin pghidden'></div>
 
     <div class='pgclabel'>
@@ -399,7 +378,6 @@
     <script src="js/stats.js"></script>
     <script src="js/camera-controls.js"></script>
     <script src="js/dat.gui.js"></script>
-    <script src="js/printerconnection.js"></script>
     <script src="js/pgcodeparser.js"></script>
     <script src="js/prettygcodeview.js"></script>
 </body>

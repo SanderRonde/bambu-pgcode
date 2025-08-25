@@ -59,13 +59,11 @@ $(function () {
     //handles fps display
     const stats = new Stats();
 
-    var printerConnection = null;
     var camera2dDragging = false;
     var camera2dLastPos = null;
 
     let searchParams = new URLSearchParams(window.location.search);
     if (searchParams.has("embedded")) {
-        $(".pgconnection").hide();
         $("#pgclogo").hide();
     }
     $("#layer-slider").on("mousedown", function (e) {
@@ -223,17 +221,20 @@ $(function () {
 
     // WebSocket connection for real-time printer updates
     function connectPrinterUpdatesWebSocket() {
-        if (printerUpdatesWS && printerUpdatesWS.readyState === WebSocket.OPEN) {
+        if (
+            printerUpdatesWS &&
+            printerUpdatesWS.readyState === WebSocket.OPEN
+        ) {
             return; // Already connected
         }
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${window.location.host}/ws/printer-updates`;
-        
+
         console.log("Connecting to WebSocket:", wsUrl);
         printerUpdatesWS = new WebSocket(wsUrl);
 
-        printerUpdatesWS.onopen = function(event) {
+        printerUpdatesWS.onopen = function (event) {
             console.log("WebSocket connected for printer updates");
             // Initialize status display while waiting for first update
             if ($("#status-name").text().includes("Checking API")) {
@@ -242,18 +243,21 @@ $(function () {
             }
         };
 
-        printerUpdatesWS.onclose = function(event) {
+        printerUpdatesWS.onclose = function (event) {
             console.log("WebSocket disconnected:", event.code, event.reason);
             printerUpdatesWS = null;
-            
+
             // Update status to show disconnection
             if ($("#status-source").text() === "WebSocket") {
-                $("#status-name").html("No API connection - drag/drop .GCode file");
+                $("#status-name").html(
+                    "No API connection - drag/drop .GCode file"
+                );
                 $("#status-source").html("Disconnected");
             }
-            
+
             // Attempt to reconnect after 5 seconds unless it was a manual close
-            if (event.code !== 1000) { // 1000 = normal closure
+            if (event.code !== 1000) {
+                // 1000 = normal closure
                 setTimeout(() => {
                     console.log("Attempting to reconnect WebSocket...");
                     connectPrinterUpdatesWebSocket();
@@ -261,17 +265,21 @@ $(function () {
             }
         };
 
-        printerUpdatesWS.onerror = function(error) {
+        printerUpdatesWS.onerror = function (error) {
             console.error("WebSocket error:", error);
         };
 
-        printerUpdatesWS.onmessage = function(event) {
+        printerUpdatesWS.onmessage = function (event) {
             try {
                 const data = JSON.parse(event.data);
                 console.log("Received WebSocket message:", data);
                 handlePrinterUpdate(data);
             } catch (error) {
-                console.error("Error parsing WebSocket message:", error, event.data);
+                console.error(
+                    "Error parsing WebSocket message:",
+                    error,
+                    event.data
+                );
             }
         };
     }
@@ -284,25 +292,34 @@ $(function () {
         if (data.gcode_file !== undefined) {
             const newFileName = data.gcode_file;
             if (newFileName !== currentApiGcodeName) {
-                console.log(`New gcode file from WebSocket: ${newFileName} (was: ${currentApiGcodeName})`);
-                
-                $("#status-name").html(newFileName || "No API file - drag/drop .GCode file");
+                console.log(
+                    `New gcode file from WebSocket: ${newFileName} (was: ${currentApiGcodeName})`
+                );
+
+                $("#status-name").html(
+                    newFileName || "No API file - drag/drop .GCode file"
+                );
                 $("#status-source").html(newFileName ? "API" : "None");
 
                 // If we have a new file name, load the new gcode
                 if (newFileName && newFileName !== currentApiGcodeName) {
                     loadGcodeFromApi(newFileName);
                 }
-                
+
                 currentApiGcodeName = newFileName;
                 hasUpdates = true;
             }
         }
 
         // Handle layerCount updates
-        if (data.layer_num !== undefined && data.layer_num !== currentApiLayer) {
+        if (
+            data.layer_num !== undefined &&
+            data.layer_num !== currentApiLayer
+        ) {
             currentApiLayer = data.layer_num;
-            console.log(`API current layer updated via WebSocket: ${currentApiLayer}`);
+            console.log(
+                `API current layer updated via WebSocket: ${currentApiLayer}`
+            );
             hasUpdates = true;
         }
 
@@ -347,17 +364,17 @@ $(function () {
     function updateLayerDisplay() {
         let totalLayers = null;
         let currentLayer = currentCalculatedLayer;
-        
+
         // Use API current layer if available, otherwise use local calculated layer
         if (currentApiLayer !== null) {
             currentLayer = currentApiLayer;
         }
-        
+
         // Get total layers from local gcode proxy
         if (gcodeProxy) {
             totalLayers = gcodeProxy.getLayerCount();
         }
-        
+
         if (totalLayers !== null) {
             $("#status-layer").html(`${currentLayer}/${totalLayers}`);
         } else {
@@ -368,12 +385,12 @@ $(function () {
     // Update layer slider max value based on total layers from gcode
     function updateLayerSliderMax() {
         let maxLayers = null;
-        
+
         // Get max layers from local gcode proxy
         if (gcodeProxy) {
             maxLayers = gcodeProxy.getLayers().length;
         }
-        
+
         if (maxLayers !== null && $("#layer-slider").attr("max") != maxLayers) {
             $("#layer-slider").attr("max", maxLayers);
         }
@@ -382,12 +399,12 @@ $(function () {
     // Update layer slider position based on current layer
     function updateLayerSliderPosition() {
         let currentLayer = currentCalculatedLayer;
-        
+
         // Use API current layer if available
         if (currentApiLayer !== null) {
             currentLayer = currentApiLayer;
         }
-        
+
         // Only update position if we're not currently using the slider manually
         if (!forceNoSync && currentLayer !== null) {
             $("#layer-slider").attr("value", currentLayer);
@@ -397,58 +414,13 @@ $(function () {
 
     // Initialize WebSocket connection for real-time updates
     function startPrinterUpdates() {
-        console.log("Starting WebSocket connection for real-time printer updates");
+        console.log(
+            "Starting WebSocket connection for real-time printer updates"
+        );
         connectPrinterUpdatesWebSocket();
     }
 
     function initGui() {
-        //Connction dialog handling
-        $(".pgconnection").on("click", function (event) {
-            let info = printerConnection.getConnectionInfo();
-            $("input[name=server]").val(info.server);
-            $("input[name=apikey]").val(info.apiKey);
-            $("textarea[name=connection-log]").val(
-                printerConnection.getLog().join("\n")
-            );
-            //todo. hook up autoconnect
-            $("#connect-dialog").show();
-        });
-        $("#connect-dialog").submit(function (event) {
-            //var data = $("#connect-dialog :input").serializeArray();
-
-            let pgcServer = $("input[name=server]").val().trim();
-            let pgcApiKey = $("input[name=apikey]").val().trim();
-
-            console.log("Connection changed:" + [pgcServer, pgcApiKey]);
-
-            //if($("input[name=remember]").is(':checked'))
-            if (true) {
-                // Always save for now
-                if (pgcServer.length == 0) localStorage.removeItem("pgcServer");
-                else localStorage.setItem("pgcServer", pgcServer);
-
-                if (pgcApiKey.length == 0) localStorage.removeItem("pgcApiKey");
-                else localStorage.setItem("pgcApiKey", pgcApiKey);
-            } else {
-                localStorage.removeItem("pgcServer", null);
-                localStorage.removeItem("pgcApiKey", null);
-            }
-
-            //always autoconnect for now.
-            localStorage.setItem("pgcAutoConnect", true);
-            // if($("input[name=autoconnect]").is(':checked'))
-            // {
-            //     localStorage.setItem("pgcAutoConnect",true);
-            // }else{
-            //     localStorage.setItem("pgcAutoConnect",false);
-            // }
-
-            //alert( JSON.stringify(data) );
-            $("#connect-dialog").hide();
-            window.location.reload();
-            event.preventDefault();
-        });
-
         if (true) {
             //simple gui
             dat.GUI.TEXT_OPEN = "View Options";
@@ -544,56 +516,6 @@ $(function () {
 
             initGui();
 
-            printerConnection = new PrinterConnection();
-            printerConnection.onUpdateState = function (newState) {
-                //todo. maybe put these two in animate()
-                //curPrinterState=newState.state;
-                //curPrintFilePos=newState.filePos;
-
-                if (newState.connected) {
-                    if (!$(".pgconnection").hasClass("connected"))
-                        $(".pgconnection").addClass("connected");
-                } else {
-                    if ($(".pgconnection").hasClass("connected"))
-                        $(".pgconnection").removeClass("connected");
-                }
-                $("#status-state").html(newState.state);
-                $("#status-elapsed").html(
-                    new Date(newState.printTime * 1000)
-                        .toISOString()
-                        .substr(11, 8)
-                );
-                $("#status-done").html(newState.perDone.toString() + "%");
-                if (newState.printTimeLeft)
-                    $("#status-eta").html(
-                        new Date(newState.printTimeLeft * 1000)
-                            .toISOString()
-                            .substr(11, 8)
-                    );
-
-                //todo. find another place for this?
-                if (gcodeProxy) {
-                    updateLayerDisplay();
-                }
-
-                if (
-                    curGcodePath != newState.gcodePath &&
-                    newState.gcodeName != ""
-                ) {
-                    curGcodePath = newState.gcodePath;
-                    let info = printerConnection.getConnectionInfo();
-                    updateJob(newState.gcodePath, info.apiKey);
-                    $("#status-name").html(newState.gcodeName);
-                }
-
-                if (newState.gcodeName && newState.gcodeName != "")
-                    $("#status-name").html(newState.gcodeName);
-                else $("#status-name").html("Nothing loaded");
-
-                //let lDelta=printHeadSim.getDeltaTo(newState.filePos).toString();
-                //console.log(["Behind ",lDelta])
-            };
-
             if (true) {
                 let defaultMoonrakerPort = 7125;
                 let pgcServer = localStorage.getItem("pgcServer");
@@ -630,11 +552,6 @@ $(function () {
                 }
                 if (searchParams.has("apiKey"))
                     pgcApiKey = searchParams.get("apiKey");
-
-                if (pgcServer && pgcAutoConnect) {
-                    //printerConnection.connectToOctoprint(pgcServer,pgcApiKey)
-                    printerConnection.detectConnection(pgcServer, pgcApiKey);
-                }
             }
             initThree();
 
@@ -908,11 +825,8 @@ $(function () {
                 firstFrame = false;
             }
 
-            //get connection state and filepos.
-            var pstate = printerConnection.getState();
-
-            let curPrinterState = pstate.state;
-            let curPrintFilePos = pstate.filePos;
+            let curPrinterState = "disconnected";
+            let curPrintFilePos = 0;
 
             let curSimFilePos = 0; //
 
@@ -984,14 +898,14 @@ $(function () {
                 if (gcodeProxy) {
                     currentCalculatedLayer =
                         gcodeProxy.syncGcodeObjToFilePos(curSimFilePos);
-                    
+
                     // If we have API layer data, use that for the current layer instead
                     let displayLayer = currentCalculatedLayer;
                     if (currentApiLayer !== null) {
                         displayLayer = currentApiLayer;
                         currentCalculatedLayer = currentApiLayer;
                     }
-                    
+
                     if (highlightMaterial !== undefined) {
                         gcodeProxy.highlightLayer(
                             displayLayer,
@@ -1014,7 +928,7 @@ $(function () {
 
                 if (gcodeProxy) {
                     //todo. this should be somewhere else
-                    
+
                     // Update the layer slider max and position
                     updateLayerSliderMax();
                     updateLayerSliderPosition();
@@ -1138,86 +1052,6 @@ $(function () {
 
         animate();
     }
-
-    function startPlaybackAdjuster() {
-        setInterval(function () {
-            //get connection state and filepos.
-            var pstate = printerConnection.getState();
-
-            let curPrinterState = pstate.state;
-            let curPrintFilePos = pstate.filePos;
-
-            let curState = printHeadSim.getCurPosition();
-            let curSimFilePos = curState.filePos;
-
-            //adapt playback rate
-            var fpDelta = curPrintFilePos - curSimFilePos;
-
-            if (fpDelta > 30000 || fpDelta < -800) {
-                let lDelta = printHeadSim
-                    .getDeltaTo(curPrintFilePos)
-                    .toString();
-                console.log(["Seeking ", playbackRate, lDelta, fpDelta]);
-                //console.log(["Behind ",lDelta])
-
-                printHeadSim.setCurPosition(curPrintFilePos - 300);
-                fpDelta = 0;
-                playbackRate = 0.9;
-            } else if (fpDelta < 0) {
-                let lDelta = printHeadSim
-                    .getDeltaTo(curPrintFilePos)
-                    .toString();
-                //console.log(["Pause ",playbackRate,lDelta,fpDelta])
-                playbackRate = 0; //just pause if still under
-            } else if (fpDelta > 500) {
-                playbackRate = 0.9 + fpDelta / 1000.0;
-                //console.log(["Slow ",playbackRate,lDelta,fpDelta])
-            } else if (fpDelta < 200 && fpDelta > 0) {
-                playbackRate = 0.5 - 1.0 / fpDelta;
-                //console.log(["Fast ",playbackRate,lDelta,fpDelta])
-            } else {
-                //console.log(["OK ",playbackRate,lDelta,fpDelta])
-            }
-
-            if (playbackRate < 0) playbackRate = 0;
-            if (playbackRate > 100) playbackRate = 100;
-        }, 500);
-    }
-    //startPlaybackAdjuster()
-
-    function startPlaybackStats() {
-        let lastFilePos = 0;
-        let lastPrintTime = 0;
-        let interval = 2 * 1000;
-        setInterval(function () {
-            //get connection state and filepos.
-            var pstate = printerConnection.getState();
-
-            let curPrinterState = pstate.state;
-            let curPrintFilePos = pstate.filePos;
-
-            let curState = printHeadSim.getCurPosition();
-            let curSimFilePos = curState.filePos;
-
-            //adapt playback rate
-            var fpDelta = curPrintFilePos - curSimFilePos;
-
-            //let lDelta=printHeadSim.getDeltaTo(curPrintFilePos);
-            let behind = printHeadSim.getDeltaFromTo(
-                lastFilePos,
-                curPrintFilePos
-            );
-            console.log("Behind Stats:" + JSON.stringify(behind));
-
-            let total = printHeadSim.getDeltaFromTo(0, curPrintFilePos);
-            total.printTime = pstate.printTime;
-            total.actualRate = (total.distance / total.printTime) * 60;
-            console.log("Total Stats:" + JSON.stringify(total));
-            lastFilePos = curPrintFilePos;
-        }, interval);
-    }
-    //let searchParams = new URLSearchParams(window.location.search)
-    if (searchParams.has("playstats")) startPlaybackStats();
 
     function resetCamera() {
         if (!cameraControls)
