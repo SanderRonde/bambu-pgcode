@@ -41,7 +41,7 @@ $(function () {
 
     var curGcodePath = "";
     var currentApiGcodeName = ""; // Track current API gcode file name
-    var apiPollingEnabled = true; // Enable/disable API polling
+    var printerUpdatesWS = null; // WebSocket connection for printer updates
 
     var forceNoSync = false; //used to override sync when user drags slider. Todo. Better way to handle this?
 
@@ -197,18 +197,20 @@ $(function () {
     });
 
     function uploadGcode(file, source = "drag-drop") {
-        forceDisconnect = true;
-
-        // If this is a manual drag-drop upload, disable API polling temporarily
+        // If this is a manual drag-drop upload, temporarily disconnect from WebSocket updates
         if (source === "drag-drop") {
-            apiPollingEnabled = false;
+            if (printerUpdatesWS) {
+                printerUpdatesWS.close();
+                printerUpdatesWS = null;
+            }
             currentApiGcodeName = ""; // Clear API tracking
+            currentApiLayer = null; // Clear API layer tracking
             $("#status-source").html("Drag & Drop");
 
-            // Re-enable API polling after 30 seconds to allow manual testing
+            // Re-establish WebSocket connection after 30 seconds to allow manual testing
             setTimeout(() => {
-                apiPollingEnabled = true;
-                console.log("API polling re-enabled");
+                connectPrinterUpdatesWebSocket();
+                console.log("WebSocket reconnection attempted");
             }, 30000);
         }
 
@@ -219,107 +221,125 @@ $(function () {
     // Store current API layer number (current layer printer is on)
     var currentApiLayer = null;
 
-    // API polling functions for fetching gcode from server endpoints
-    async function checkApiGcode() {
-        if (!apiPollingEnabled) return;
+    // WebSocket connection for real-time printer updates
+    function connectPrinterUpdatesWebSocket() {
+        if (printerUpdatesWS && printerUpdatesWS.readyState === WebSocket.OPEN) {
+            return; // Already connected
+        }
 
-        try {
-            // First check the gcode name endpoint
-            const nameResponse = await fetch("/api/gcode_name");
-            if (!nameResponse.ok) {
-                console.log("No gcode name available from API");
-                if ($("#status-name").text().includes("...")) {
-                    $("#status-name").html(
-                        "No API file - drag/drop .GCode file"
-                    );
-                    $("#status-source").html("None");
-                }
-                return;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/printer-updates`;
+        
+        console.log("Connecting to WebSocket:", wsUrl);
+        printerUpdatesWS = new WebSocket(wsUrl);
+
+        printerUpdatesWS.onopen = function(event) {
+            console.log("WebSocket connected for printer updates");
+            // Initialize status display while waiting for first update
+            if ($("#status-name").text().includes("Checking API")) {
+                $("#status-name").html("Waiting for printer data...");
+                $("#status-source").html("WebSocket");
             }
+        };
 
-            const gcodeName = (await nameResponse.json())?.fileName;
-            if (!gcodeName || gcodeName.trim() === "") {
-                console.log("Empty gcode name from API");
-                if ($("#status-name").text().includes("...")) {
-                    $("#status-name").html(
-                        "No API file - drag/drop .GCode file"
-                    );
-                    $("#status-source").html("None");
-                }
-                return;
+        printerUpdatesWS.onclose = function(event) {
+            console.log("WebSocket disconnected:", event.code, event.reason);
+            printerUpdatesWS = null;
+            
+            // Update status to show disconnection
+            if ($("#status-source").text() === "WebSocket") {
+                $("#status-name").html("No API connection - drag/drop .GCode file");
+                $("#status-source").html("Disconnected");
             }
-
-            $("#status-name").html(gcodeName);
-            $("#status-source").html("API");
-
-            // If we have a different file name, load the new gcode
-            if (gcodeName !== currentApiGcodeName) {
-                console.log(
-                    `New gcode file detected: ${gcodeName} (was: ${currentApiGcodeName})`
-                );
-
-                try {
-                    const gcodeResponse = await fetch("/api/gcode");
-                    if (!gcodeResponse.ok) {
-                        console.log("Failed to fetch gcode content from API");
-                        return;
-                    }
-
-                    const gcodeContent = await gcodeResponse.text();
-                    if (!gcodeContent || gcodeContent.trim() === "") {
-                        console.log("Empty gcode content from API");
-                        return;
-                    }
-
-                    // Update current API file name
-                    currentApiGcodeName = gcodeName;
-
-                    // Create a blob from the gcode content and load it
-                    const blob = new Blob([gcodeContent], {
-                        type: "text/plain",
-                    });
-                    const file = new File([blob], gcodeName, {
-                        type: "text/plain",
-                    });
-
-                    $("#status-name").html(gcodeName);
-                    $("#status-source").html("API");
-
-                    console.log(`Loading gcode from API: ${gcodeName}`);
-                    uploadGcode(file, "api");
-                } catch (error) {
-                    console.error("Error fetching gcode content:", error);
-                }
+            
+            // Attempt to reconnect after 5 seconds unless it was a manual close
+            if (event.code !== 1000) { // 1000 = normal closure
+                setTimeout(() => {
+                    console.log("Attempting to reconnect WebSocket...");
+                    connectPrinterUpdatesWebSocket();
+                }, 5000);
             }
-        } catch (error) {
-            console.error("Error checking API gcode:", error);
+        };
+
+        printerUpdatesWS.onerror = function(error) {
+            console.error("WebSocket error:", error);
+        };
+
+        printerUpdatesWS.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                console.log("Received WebSocket message:", data);
+                handlePrinterUpdate(data);
+            } catch (error) {
+                console.error("Error parsing WebSocket message:", error, event.data);
+            }
+        };
+    }
+
+    // Handle incoming printer updates from WebSocket
+    function handlePrinterUpdate(data) {
+        let hasUpdates = false;
+
+        // Handle fileName updates
+        if (data.gcode_file !== undefined) {
+            const newFileName = data.gcode_file;
+            if (newFileName !== currentApiGcodeName) {
+                console.log(`New gcode file from WebSocket: ${newFileName} (was: ${currentApiGcodeName})`);
+                
+                $("#status-name").html(newFileName || "No API file - drag/drop .GCode file");
+                $("#status-source").html(newFileName ? "API" : "None");
+
+                // If we have a new file name, load the new gcode
+                if (newFileName && newFileName !== currentApiGcodeName) {
+                    loadGcodeFromApi(newFileName);
+                }
+                
+                currentApiGcodeName = newFileName;
+                hasUpdates = true;
+            }
+        }
+
+        // Handle layerCount updates
+        if (data.layer_num !== undefined && data.layer_num !== currentApiLayer) {
+            currentApiLayer = data.layer_num;
+            console.log(`API current layer updated via WebSocket: ${currentApiLayer}`);
+            hasUpdates = true;
+        }
+
+        // Update display if we have any changes
+        if (hasUpdates) {
+            updateLayerDisplay();
+            updateLayerSliderPosition();
         }
     }
 
-    // API polling function for fetching current layer number
-    async function checkApiLayerCount() {
-        if (!apiPollingEnabled) return;
-
+    // Load gcode file from API
+    async function loadGcodeFromApi(fileName) {
         try {
-            const layerResponse = await fetch("/api/layer_count");
-            if (!layerResponse.ok) {
-                console.log("No current layer available from API");
+            const gcodeResponse = await fetch("/api/gcode");
+            if (!gcodeResponse.ok) {
+                console.log("Failed to fetch gcode content from API");
                 return;
             }
 
-            const layerData = await layerResponse.json();
-            const apiCurrentLayer = layerData?.layerCount;
-            
-            if (apiCurrentLayer !== null && apiCurrentLayer !== currentApiLayer) {
-                currentApiLayer = apiCurrentLayer;
-                console.log(`API current layer updated: ${apiCurrentLayer}`);
-                
-                // Update the layer display and slider position with current API layer
-                updateLayerDisplay();
-                updateLayerSliderPosition();
+            const gcodeContent = await gcodeResponse.text();
+            if (!gcodeContent || gcodeContent.trim() === "") {
+                console.log("Empty gcode content from API");
+                return;
             }
+
+            // Create a blob from the gcode content and load it
+            const blob = new Blob([gcodeContent], {
+                type: "text/plain",
+            });
+            const file = new File([blob], fileName, {
+                type: "text/plain",
+            });
+
+            console.log(`Loading gcode from API via WebSocket: ${fileName}`);
+            uploadGcode(file, "api");
         } catch (error) {
-            console.error("Error checking API current layer:", error);
+            console.error("Error fetching gcode content:", error);
         }
     }
 
@@ -375,19 +395,10 @@ $(function () {
         }
     }
 
-    // Start API polling every 10 seconds
-    function startApiPolling() {
-        console.log("Starting API polling for gcode and layer updates every 10 seconds");
-
-        // Check immediately on start
-        checkApiGcode();
-        checkApiLayerCount();
-
-        // Then check every 10 seconds
-        setInterval(() => {
-            checkApiGcode();
-            checkApiLayerCount();
-        }, 10000);
+    // Initialize WebSocket connection for real-time updates
+    function startPrinterUpdates() {
+        console.log("Starting WebSocket connection for real-time printer updates");
+        connectPrinterUpdatesWebSocket();
     }
 
     function initGui() {
@@ -627,8 +638,8 @@ $(function () {
             }
             initThree();
 
-            // Start API polling for gcode updates
-            startApiPolling();
+            // Start WebSocket connection for real-time printer updates
+            startPrinterUpdates();
 
             //show fps unless url param "nofps"
             if (searchParams.has("fps")) {

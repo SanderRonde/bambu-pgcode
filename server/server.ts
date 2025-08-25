@@ -97,6 +97,7 @@ class BambuMQTT {
 
     public fileName: string | null = null;
     public layerCount: number | null = null;
+    public server: Bun.Server | null = null;
 
     public constructor(
         private readonly _printerIp: string,
@@ -216,13 +217,31 @@ class BambuMQTT {
             layer_num?: number;
         };
     }) {
-        if (message.print?.gcode_file) {
+        if (
+            message.print?.gcode_file &&
+            message.print.gcode_file !== this.fileName
+        ) {
             console.log("gcode_file", message.print.gcode_file);
             this.fileName = message.print.gcode_file;
+            this.server?.publish(
+                "printer-data/gcode_file",
+                JSON.stringify({
+                    gcode_file: message.print.gcode_file,
+                })
+            );
         }
-        if (message.print?.layer_num) {
+        if (
+            message.print?.layer_num &&
+            Number(message.print.layer_num) !== this.layerCount
+        ) {
             console.log("layer_num", message.print.layer_num);
             this.layerCount = Number(message.print.layer_num);
+            this.server?.publish(
+                "printer-data/layer_num",
+                JSON.stringify({
+                    layer_num: message.print.layer_num,
+                })
+            );
         }
     }
 }
@@ -242,9 +261,40 @@ async function main() {
     const bambu = new BambuMQTT(ip, accessCode, serial);
     await bambu.connect();
 
-    Bun.serve({
+    bambu.server = Bun.serve({
         port: process.env.PORT,
         hostname: "0.0.0.0",
+
+        fetch(req, server) {
+            const url = new URL(req.url);
+            if (url.pathname === "/ws/printer-updates") {
+                server.upgrade(req, {
+                    data: { type: "printer-updates" },
+                });
+                return;
+            }
+            return new Response("Hello, world!");
+        },
+
+        websocket: {
+            open: (ws) => {
+                ws.subscribe("printer-data/gcode_file");
+                ws.subscribe("printer-data/layer_num");
+                ws.send(
+                    JSON.stringify({
+                        gcode_file: bambu.fileName,
+                        layer_num: bambu.layerCount,
+                    })
+                );
+            },
+            message: (ws, message) => {
+                console.log("message", message);
+            },
+            close: (ws) => {
+                ws.unsubscribe("printer-data/gcode_file");
+                ws.unsubscribe("printer-data/layer_num");
+            },
+        },
 
         routes: {
             "/": () => new Response(Bun.file(join(CLIENT_DIR, "index.html"))),
